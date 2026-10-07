@@ -2,152 +2,138 @@ const express = require("express");
 const cors = require("cors");
 
 const app = express();
-const PORT = 3000;
-
-const API_KEY = "0000000000";
-const BASE_URL = "https://aihorde.net/api/v2";
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: "10mb" }));
+
+const PORT = process.env.PORT || 3000;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+
+app.get("/", (req, res) => {
+  res.send("EduMind Gemini backend is running!");
+});
 
 app.post("/api/ask", async (req, res) => {
   try {
-    const question = String(req.body?.question || "").trim();
+    const { question, image } = req.body;
 
-    if (!question) {
+    if (!question && !image) {
       return res.status(400).json({
-        error: "Question is required."
+        error: "Question or image is required."
       });
     }
 
-    const submitResponse = await fetch(
-      `${BASE_URL}/generate/text/async`,
+    if (!GEMINI_API_KEY) {
+      return res.status(500).json({
+        error: "GEMINI_API_KEY is not configured on the server."
+      });
+    }
+
+    const parts = [];
+
+    parts.push({
+      text: `
+You are EduMind, a fast and accurate school AI tutor for Classes 1-10.
+
+Answer the student's question completely and correctly.
+
+Rules:
+- Use simple school-level language.
+- Do not cut the answer in the middle.
+- For explanations, use short numbered points when useful.
+- For Maths, show the calculation and final answer.
+- For Science/SST/Computer, give the important points clearly.
+- For Hindi/English, answer according to the question.
+- If an image is provided, read the question from the image and solve it.
+- Do not invent facts.
+- Keep the answer concise but complete.
+
+Student question:
+${question || "Solve the question shown in the uploaded image."}
+`
+    });
+
+    // Optional image support
+    if (image) {
+      let base64Data = image;
+      let mimeType = "image/jpeg";
+
+      if (image.startsWith("data:")) {
+        const match = image.match(/^data:(.+?);base64,(.+)$/);
+
+        if (match) {
+          mimeType = match[1];
+          base64Data = match[2];
+        }
+      }
+
+      parts.push({
+        inline_data: {
+          mime_type: mimeType,
+          data: base64Data
+        }
+      });
+    }
+
+    const response = await fetch(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" +
+        encodeURIComponent(GEMINI_API_KEY),
       {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json",
-          "apikey": API_KEY
+          "Content-Type": "application/json"
         },
         body: JSON.stringify({
-     prompt:
-  "Answer ONLY the exact question. " +
-  "Give a very short school-level answer. " +
-  "Maximum 1-2 sentences. " +
-  "Do not explain unnecessarily. " +
-  "Do not add examples unless asked. " +
-  "Do not guess or invent facts. " +
-  "For Maths, give only calculation and final answer. " +
-  "Question: " + question,
-
-          models: [
-            "koboldcpp/Llama-3.2-3B-Instruct"
+          contents: [
+            {
+              parts: parts
+            }
           ],
-
-          params: {
-            max_length: 80,
-            temperature: 0.1,
-            singleline: true,
-            frmttriminc: true
+          generationConfig: {
+            temperature: 0.2,
+            maxOutputTokens: 1000
           }
         })
       }
     );
 
-    const submitText = await submitResponse.text();
+    const data = await response.json();
 
-    let submitData;
+    if (!response.ok) {
+      console.error("Gemini error:", data);
 
-    try {
-      submitData = JSON.parse(submitText);
-    } catch {
+      return res.status(response.status).json({
+        error:
+          data?.error?.message ||
+          "Gemini request failed."
+      });
+    }
+
+    const answer =
+      data?.candidates?.[0]?.content?.parts
+        ?.map(part => part.text || "")
+        .join("")
+        .trim();
+
+    if (!answer) {
       return res.status(500).json({
-        error: "AI Horde returned an invalid response.",
-        details: submitText
+        error: "Gemini returned an empty answer."
       });
     }
 
-    if (!submitResponse.ok) {
-      return res.status(submitResponse.status).json({
-        error: "AI Horde request failed.",
-        details: submitData
-      });
-    }
-
-    const requestId = submitData.id;
-
-    if (!requestId) {
-      return res.status(500).json({
-        error: "No request ID received from AI Horde.",
-        details: submitData
-      });
-    }
-
-    for (let i = 0; i < 60; i++) {
-     await new Promise(resolve => setTimeout(resolve, 500));
-
-      const statusResponse = await fetch(
-        `${BASE_URL}/generate/text/status/${requestId}`,
-        {
-          headers: {
-            "Accept": "application/json",
-            "apikey": API_KEY
-          }
-        }
-      );
-
-      const statusText = await statusResponse.text();
-
-      let statusData;
-
-      try {
-        statusData = JSON.parse(statusText);
-      } catch {
-        return res.status(500).json({
-          error: "Invalid status response from AI Horde.",
-          details: statusText
-        });
-      }
-
-      if (statusData.faulted) {
-        return res.status(500).json({
-          error: "AI Horde generation failed.",
-          details: statusData
-        });
-      }
-
-      if (statusData.done) {
-        const answer = statusData.generations?.[0]?.text;
-
-        if (!answer) {
-          return res.status(500).json({
-            error: "AI returned no answer.",
-            details: statusData
-          });
-        }
-
-        return res.json({
-          answer: answer.trim()
-        });
-      }
-    }
-
-    return res.status(504).json({
-      error: "AI request timed out. Try again."
+    res.json({
+      answer: answer
     });
 
   } catch (error) {
-    console.error("AI ERROR:", error);
+    console.error("Server error:", error);
 
-    return res.status(500).json({
-      error: "Server error.",
-      details: error.message
+    res.status(500).json({
+      error: "Server error. Please try again."
     });
   }
 });
 
 app.listen(PORT, () => {
-  console.log(
-    `EduMind backend running at http://localhost:${PORT}`
-  );
+  console.log(`EduMind Gemini backend running on port ${PORT}`);
 });
