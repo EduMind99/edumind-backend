@@ -8,7 +8,12 @@ app.use(express.json({ limit: "10mb" }));
 
 const PORT = process.env.PORT || 3000;
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-
+console.log(
+  "OpenRouter key loaded:",
+  !!process.env.OPENROUTER_API_KEY,
+  "length:",
+  process.env.OPENROUTER_API_KEY?.length || 0
+);
 app.get("/", (req, res) => {
   res.send("EduMind OpenRouter AI backend is running!");
 });
