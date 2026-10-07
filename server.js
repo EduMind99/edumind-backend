@@ -29,31 +29,26 @@ app.post("/api/ask", async (req, res) => {
       });
     }
 
-    const parts = [];
+    let input = `
+You are EduMind, a helpful school AI tutor for Classes 1-10.
 
-    parts.push({
-      text: `
-You are EduMind, a fast and accurate school AI tutor for Classes 1-10.
-
-Answer the student's question completely and correctly.
+Answer the student's question correctly and completely.
 
 Rules:
 - Use simple school-level language.
-- Do not cut the answer in the middle.
-- For explanations, use short numbered points when useful.
+- Give a complete answer; never stop halfway.
+- Use numbered points when they make the answer clearer.
 - For Maths, show the calculation and final answer.
-- For Science/SST/Computer, give the important points clearly.
-- For Hindi/English, answer according to the question.
-- If an image is provided, read the question from the image and solve it.
+- For Science, SST and Computer, explain the important points clearly.
+- For Hindi and English, answer according to the question.
 - Do not invent facts.
 - Keep the answer concise but complete.
 
 Student question:
 ${question || "Solve the question shown in the uploaded image."}
-`
-    });
+`;
 
-    // Optional image support
+    // Image support
     if (image) {
       let base64Data = image;
       let mimeType = "image/jpeg";
@@ -67,31 +62,40 @@ ${question || "Solve the question shown in the uploaded image."}
         }
       }
 
-      parts.push({
-        inline_data: {
-          mime_type: mimeType,
-          data: base64Data
+      input = [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: input
+            },
+            {
+              type: "image",
+              image: {
+                mime_type: mimeType,
+                data: base64Data
+              }
+            }
+          ]
         }
-      });
+      ];
     }
 
     const response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=" +
-        encodeURIComponent(GEMINI_API_KEY),
+      "https://generativelanguage.googleapis.com/v1beta/interactions",
       {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          "x-goog-api-key": GEMINI_API_KEY
         },
         body: JSON.stringify({
-          contents: [
-            {
-              parts: parts
-            }
-          ],
-          generationConfig: {
-            temperature: 0.2,
-            maxOutputTokens: 1000
+          model: "gemini-3.8-flash",
+          input: input,
+          store: false,
+          generation_config: {
+            thinking_level: "low"
           }
         })
       }
@@ -103,26 +107,26 @@ ${question || "Solve the question shown in the uploaded image."}
       console.error("Gemini error:", data);
 
       return res.status(response.status).json({
-        error:
-          data?.error?.message ||
-          "Gemini request failed."
+        error: data?.error?.message || "Gemini request failed."
       });
     }
 
     const answer =
-      data?.candidates?.[0]?.content?.parts
-        ?.map(part => part.text || "")
-        .join("")
-        .trim();
+      data?.output_text ||
+      data?.output
+        ?.filter(item => item.type === "text")
+        ?.map(item => item.text)
+        ?.join("") ||
+      "";
 
-    if (!answer) {
+    if (!answer.trim()) {
       return res.status(500).json({
         error: "Gemini returned an empty answer."
       });
     }
 
     res.json({
-      answer: answer
+      answer: answer.trim()
     });
 
   } catch (error) {
