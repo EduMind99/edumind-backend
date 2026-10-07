@@ -99,7 +99,6 @@ ${question || "Solve the question in the uploaded image."}
             input: input,
             store: false,
             generation_config: {
-              thinking_level: "minimal",
               temperature: 0.2,
               max_output_tokens: 700
             }
