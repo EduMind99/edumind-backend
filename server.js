@@ -55,7 +55,6 @@ Rules:
       "https://openrouter.ai/api/v1/chat/completions",
       {
         method: "POST",
-        headers: {
          headers: {
   "Content-Type": "application/json",
   "Authorization": "Bearer " + OPENROUTER_API_KEY
