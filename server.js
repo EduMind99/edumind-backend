@@ -56,11 +56,10 @@ Rules:
       {
         method: "POST",
         headers: {
-          "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-          "Content-Type": "application/json",
-          "HTTP-Referer": "https://rudra-g99.github.io/edumind/",
-          "X-Title": "EduMind - Rudra AI"
-        },
+         headers: {
+  "Content-Type": "application/json",
+  "Authorization": "Bearer " + OPENROUTER_API_KEY
+},
         body: JSON.stringify({
           model: "openrouter/free",
           messages: [
