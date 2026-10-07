@@ -1,5 +1,6 @@
 const express = require("express");
 const cors = require("cors");
+const OpenAI = require("openai");
 
 const app = express();
 
@@ -8,12 +9,19 @@ app.use(express.json({ limit: "10mb" }));
 
 const PORT = process.env.PORT || 3000;
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+
 console.log(
   "OpenRouter key loaded:",
-  !!process.env.OPENROUTER_API_KEY,
+  !!OPENROUTER_API_KEY,
   "length:",
-  process.env.OPENROUTER_API_KEY?.length || 0
+  OPENROUTER_API_KEY?.length || 0
 );
+
+const client = new OpenAI({
+  apiKey: OPENROUTER_API_KEY,
+  baseURL: "https://openrouter.ai/api/v1"
+});
+
 app.get("/", (req, res) => {
   res.send("EduMind OpenRouter AI backend is running!");
 });
@@ -34,63 +42,38 @@ app.post("/api/ask", async (req, res) => {
       });
     }
 
-    const systemPrompt = `
+    const response = await client.chat.completions.create({
+      model: "openrouter/free",
+      messages: [
+        {
+          role: "system",
+          content: `
 You are Rudra AI, a smart school tutor for Classes 1-10.
 
-Answer the student's question correctly.
+Answer correctly and directly.
 
 Rules:
 - Answer exactly what is asked.
-- Use simple language.
+- Use simple school-level language.
 - For Maths, show steps and final answer.
 - For Science, explain clearly.
 - For Hindi and English, answer appropriately.
 - For SST and Computer, use clear points when useful.
-- Do not make up facts.
+- Do not invent facts.
 - Do not give irrelevant answers.
-- Keep answers reasonably concise but complete.
-`;
+- Keep answers concise but complete.
+`
+        },
+        {
+          role: "user",
+          content: question
+        }
+      ],
+      temperature: 0.2,
+      max_tokens: 1000
+    });
 
-    const response = await fetch(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
-        method: "POST",
-         headers: {
-  "Content-Type": "application/json",
-  "Authorization": "Bearer " + OPENROUTER_API_KEY
-},
-        body: JSON.stringify({
-          model: "openrouter/free",
-          messages: [
-            {
-              role: "system",
-              content: systemPrompt
-            },
-            {
-              role: "user",
-              content: question
-            }
-          ],
-          temperature: 0.2,
-          max_tokens: 1000
-        })
-      }
-    );
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.error("OpenRouter error:", data);
-
-      return res.status(response.status).json({
-        error:
-          data?.error?.message ||
-          "OpenRouter AI is temporarily unavailable."
-      });
-    }
-
-    const answer =
-      data?.choices?.[0]?.message?.content;
+    const answer = response?.choices?.[0]?.message?.content;
 
     if (!answer || !answer.trim()) {
       return res.status(500).json({
@@ -103,10 +86,13 @@ Rules:
     });
 
   } catch (error) {
-    console.error("Server error:", error);
+    console.error("OpenRouter error:", error);
 
     res.status(500).json({
-      error: "AI server error. Please try again."
+      error:
+        error?.error?.message ||
+        error?.message ||
+        "OpenRouter AI error. Please try again."
     });
   }
 });
