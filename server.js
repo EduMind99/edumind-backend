@@ -28,11 +28,11 @@ app.get("/", (req, res) => {
 
 app.post("/api/ask", async (req, res) => {
   try {
-    const { question } = req.body;
+    const { question, image } = req.body;
 
-    if (!question || !question.trim()) {
+    if (!question && !image) {
       return res.status(400).json({
-        error: "Question is required."
+        error: "Question or image is required."
       });
     }
 
@@ -42,8 +42,33 @@ app.post("/api/ask", async (req, res) => {
       });
     }
 
+    // Normal text question
+    let userContent;
+
+    if (image) {
+      // Photo + question
+      userContent = [
+        {
+          type: "text",
+          text:
+            question ||
+            "Read the question in this photo carefully and solve it. Give a clear school-level answer."
+        },
+        {
+          type: "image_url",
+          image_url: {
+            url: image
+          }
+        }
+      ];
+    } else {
+      // Text only
+      userContent = question;
+    }
+
     const response = await client.chat.completions.create({
       model: "openrouter/free",
+
       messages: [
         {
           role: "system",
@@ -54,6 +79,10 @@ Answer correctly and directly.
 
 Rules:
 - Answer exactly what is asked.
+- If an image is provided, carefully read the image before answering.
+- Solve questions visible in the image.
+- Do not guess text that is unclear.
+- If the image is unclear, say that the photo is unclear.
 - Use simple school-level language.
 - For Maths, show steps and final answer.
 - For Science, explain clearly.
@@ -66,11 +95,12 @@ Rules:
         },
         {
           role: "user",
-          content: question
+          content: userContent
         }
       ],
+
       temperature: 0.2,
-      max_tokens: 1000
+      max_tokens: 1200
     });
 
     const answer = response?.choices?.[0]?.message?.content;
